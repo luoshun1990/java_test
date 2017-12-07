@@ -1,0 +1,269 @@
+ 程序编写和编译:
+
+    程序就分成了c的部分和java的部分,首先我们先看看java的部分,我是把在同一目录下新建了两个文件夹分别叫c和java,
+
+作为c程序的路径和java的classpath,然后在java文件夹下面新建包com.test.base64,java程序的目录结构即:
+
+java/com/test/base64.接着,我们在base64目录下面新建一个Hello.java:
+
+
+
+Java代码  收藏代码
+1. package com.test.base64;  
+2.    
+3. public class Hello{  
+4.     public String hello (String name){  
+5.         return "hello,"+name;     
+6.     }   
+7. }  
+
+    结构非常简单,不过有参数有返回值就可以代表大部分情况了.然后我们使用javac对这个文件进行编译以产生一个class
+
+文件:
+
+
+
+Java代码  收藏代码
+1. [roysong@roysong java]$ cd com/test/base64/  
+2. [roysong@roysong base64]$ javac Hello.java  
+3. [roysong@roysong base64]$ ls  
+4.  Hello.class  Hello.java   
+
+   编译成功后,在base64目录下会出现Hello.class这个文件.
+
+   然后我们回到c文件夹,新建一个c源文件,我的是cfjIns.c,开始编写c的程序:
+
+
+
+C代码  收藏代码
+1. #include <stdio.h>  
+2. #include <jni.h>  
+3.    
+4. /** 
+5. *初始化jvm 
+6. */  
+7. JNIEnv* create_vm() {   
+8.         JavaVM* jvm;   
+9.         JNIEnv* env;   
+10.         JavaVMInitArgs args;   
+11.         JavaVMOption options[1];   
+12.         args.version = JNI_VERSION_1_6;   
+13.         args.nOptions = 1;   
+14.         options[0].optionString = "-Djava.class.path=../java";  
+15.         args.options = options;   
+16.         args.ignoreUnrecognized = JNI_FALSE;   
+17.         JNI_CreateJavaVM(&jvm, (void **)&env, &args);  
+18.         return env;  
+19. }  
+  
+    这是cfjIns.c的第一部分,头文件声明
+
+
+
+C代码  收藏代码
+1. #include <jni.h>  
+
+    非常重要,这是引用的$JAVA_HOME/include/jni.h,一会儿我们在编译时会加上这个路径.
+
+    其次就是
+
+
+
+C代码  收藏代码
+1. args.version = JNI_VERSION_1_6;  
+
+     这是jni的版本信息,需要跟你自己的jdk中jni版本对应,jdk1.6和jdk1.7的jni版本都是上面这个.
+
+
+
+C代码  收藏代码
+1. options[0].optionString = "-Djava.class.path=../java";  
+
+     这个参数是指明你自己java程序的类路径(classpath),因为我的c文件夹和java文件夹在同一目录下,所以我用了一个
+
+相对路径来指明classpath.
+
+ 
+
+    cfjIns.c中获取类定义的函数:
+
+
+
+C代码  收藏代码
+1. /** 
+2. * 根据全限定类名来获取类的定义 
+3. */  
+4. jclass create_class(JNIEnv* env,char *className){  
+5.         jclass cls = (*env)->FindClass(env,className);  
+6.         if(cls == 0){  
+7.                 printf("class-[%s] find error\n",className);  
+8.                 return;  
+9.         }   
+10.         return cls;  
+11. }  
+
+    这个函数有两个参数,第一个就是我们上面通过create_vm函数创建的jvm环境,第二个是全限定的类名字符串,
+
+比如:"com/test/base64/Hello",返回值即对应的类.
+
+ 
+
+    cfjIns.c中获取类实例的函数:
+
+
+
+C代码  收藏代码
+1. /** 
+2. *通过无参构造函数来获取对应类的实例 
+3. */  
+4. jobject getInstance(JNIEnv* env, jclass obj_class)  
+5. {    
+6.         jmethodID construction_id = (*env)->GetMethodID(env,obj_class, "<init>", "()V");  
+7.         jobject obj = (*env)->NewObject(env,obj_class, construction_id);  
+8.         if(obj == 0){  
+9.                 printf("java class instance failed\n");  
+10.                 return;  
+11.         }   
+12.         return obj;   
+13. }  
+
+    这个函数的第一个参数是jvm环境,第二个是通过上面的create_class函数获取的类定义.
+
+ 
+
+    cfjIns.c中获取方法定义的函数:
+
+
+
+C代码  收藏代码
+1. /** 
+2. * 根据类\方法名\返回值\参数获取类中对应的方法定义 
+3. */  
+4. jmethodID get_method(JNIEnv* env,jclass cls,char *methodName,char *key){  
+5.         jmethodID mid = (*env)->GetMethodID(env,cls,methodName,key);  
+6.         if(mid == 0){  
+7.                 printf("method-%s is not found\n",methodName);  
+8.                 return;  
+9.         }   
+10.         return mid;  
+11. }  
+
+    这儿我们需要注意的是最后一个参数字符串key,这个是方法签名,用于指明方法的参数和返回值类型,格式是
+
+"(参数类型声明)返回值类型声明".类型声明的值参照下面的对应表:
+
+Java类型      对应的签名 
+boolean Z 
+byte B 
+char C 
+shrot S 
+int I 
+long L 
+float F 
+double D 
+void V 
+Object L用/分割包的完整类名;  Ljava/lang/String; 
+Array [签名       [I       [Ljava/lang/String; 
+
+ 
+
+    举个例子,如果方法的参数是int,返回值是void,那么方法的签名就是"(I)V";如果方法的参数是String,返回值
+
+也是String,则方法的签名就是"(Ljava/lang/String;)Ljava/lang/String;",注意,如果是引用类型,类名后面必须
+
+带有一个分号.
+
+    我们也可以通过javap来查看类中方法参数和返回值的签名:
+
+
+
+Java代码  收藏代码
+1. [roysong@roysong c]$ cd ../java/com/test/base64/  
+2. [roysong@roysong base64]$ javap -s -private Hello  
+3. Compiled from "Hello.java"  
+4. public class com.test.base64.Hello extends java.lang.Object{  
+5. public com.test.base64.Hello();  
+6.   Signature: ()V    //构造函数的签名  
+7. public java.lang.String hello(java.lang.String);  
+8.   Signature: (Ljava/lang/String;)Ljava/lang/String; //hello方法的签名  
+9. }  
+  
+ 
+
+    然后是一个将c语言中的字符串转换为java中String的工具函数:
+
+
+
+C代码  收藏代码
+1. /** 
+2. * 转换c中的字符串为java.lang.String,这个方法是从网上找到的,感谢原作者<a href="http://home.cnblogs.com/u/liangwind/">天末凉风</a> 
+3.  
+4. */  
+5. jstring stoJstring(JNIEnv* env, const char* pat)  
+6. {   
+7.         jclass strClass = (*env)->FindClass(env,"Ljava/lang/String;");  
+8.         jmethodID ctorID = (*env)->GetMethodID(env,strClass, "<init>", "([BLjava/lang/String;)V");  
+9.         jbyteArray bytes = (*env)->NewByteArray(env,strlen(pat));  
+10.         (*env)->SetByteArrayRegion(env,bytes, 0, strlen(pat), (jbyte*)pat);  
+11.         jstring encoding = (*env)->NewStringUTF(env,"utf-8");  
+12.         return (jstring)(*env)->NewObject(env,strClass, ctorID, bytes, encoding);  
+13. }  
+
+    有了上面的例子,这个函数就很好理解了,首先获取到java.lang.String的类定义,然后获取构造函数,然后将c中的字符串
+
+转化为字节流并设置编码格式,最后产生一个新的java.lang.String对象并返回.
+
+ 
+
+   这下我们就准备齐全了,开始编写调用函数:
+
+
+
+C代码  收藏代码
+1. void invoke(){  
+2.         JNIEnv* env = create_vm(); //初始化java虚拟机  
+3.         jclass cls = create_class(env,"com/test/base64/Hello");//根据类名找到对应的类  
+4.         jobject obj = getInstance(env,cls);//然后根据类获取对应的实例  
+5.         jmethodID hello = get_method(env,cls,"hello","(Ljava/lang/String;)Ljava/lang/String;");//根据类\方法名和签名获取到对应的方法  
+6.         jstring name_str =  (*env)->CallObjectMethod(env,obj,hello,stoJstring(env,"a"));//传入参数调用方法  
+7.         const char* pname = (*env)->GetStringUTFChars(env,name_str, NULL);//将返回的java字符串转换为c字符串  
+8.         printf("the result is:%s\n",pname);//打印出调用的结果  
+9. }  
+
+    调用函数编写完成后,用一个main函数来运行一下查看结果:
+
+
+
+C代码  收藏代码
+1. int main(int argc, char **argv) {  
+2.         invoke();   
+3. }  
+  
+     至此,c的源代码cfjIns.c就编写完成了,我们开始编译cfjIns.c:
+
+
+
+Java代码  收藏代码
+1. [roysong@roysong c]$ gcc -o cfj cfj.c -I$JAVA_HOME/include -I$JAVA_HOME/include/linux -L$JAVA_HOME/jre/lib/i386/client -ljvm   
+2. [roysong@roysong c]$ ls  
+3. cfjIns  cfjIns.c  
+
+     编译命令中我们使用-I选项加入了两个头文件路径,$JAVA_HOME/include这个是为了引用到jni.h,而
+
+$JAVA_HOME/include/linux这个为了引用到jni_md.h,因为jni.h中有对jni_md.h的引用.我的操作系统是fedora,所以
+
+jni_md.h在$JAVA_HOME/include的linux文件夹下面,其他操作系统可能路径不同,找到jni_md.h文件的路径进行替换
+
+即可.使用-L选项是为了引用到java虚拟机的库文件libjvm.so,-l选项(注意,这是小写的L,而不是大写的i)是声明具体引用
+
+的库jvm.如果libjvm.so文件的路径与我的不同,找到libjvm.so文件的路径进行替换即可.
+
+    编译成功后,目录下面会出现一个可运行的cfj文件,如果一切顺利,我们运行它就可以得到预期的结果:
+
+
+
+Java代码  收藏代码
+1. [roysong@roysong c]$ ./cfjIns  
+2. hello,a  
+
+    显示正常,调用完成
